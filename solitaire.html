@@ -241,6 +241,7 @@
     </div>
     <div id="btn-row">
       <button class="btn" onclick="undoMove()">↩ Undo</button>
+      <button class="btn" id="sound-btn" onclick="toggleSound()">🔊</button>
       <button class="btn" onclick="newGame()">New Game</button>
     </div>
   </div>
@@ -378,19 +379,22 @@ function makeCardElem(card) {
   const rank = card.rank;
 
   const rnkSz   = Math.max(12, Math.floor(W * 0.26));
-  const cSuitSz = Math.max(9,  Math.floor(W * 0.22));
-  const cx = 4, cy = 3;
+  const cSuitSz = Math.max(8,  Math.floor(W * 0.20));
+  const cx = 3, cy = 3;
+  // SVG text y = baseline. Cap height ≈ 72% of font-size for Arial.
+  // So the visual top of the rank letter is at: cy + rnkSz - rnkSz*0.72 = cy + rnkSz*0.28
+  const rankVisualTop = cy + Math.floor(rnkSz * 0.28);
+  const suitRX = W - cSuitSz - 3;
+  const suitY  = rankVisualTop;
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="position:absolute;top:0;left:0">`;
 
-  // ── Top-left corner ──
   svg += `<text x="${cx}" y="${cy + rnkSz}" font-family="Arial,Helvetica,sans-serif" font-size="${rnkSz}" font-weight="900" fill="${color}">${rank}</text>`;
-  svg += `<svg x="${cx}" y="${cy + rnkSz + 2}" width="${cSuitSz}" height="${cSuitSz}" viewBox="0 0 10 10" fill="${color}">${suitPath(card.suit)}</svg>`;
+  svg += `<svg x="${suitRX}" y="${suitY}" width="${cSuitSz}" height="${cSuitSz}" viewBox="0 0 10 10" fill="${color}">${suitPath(card.suit)}</svg>`;
 
-  // ── Bottom-right corner (rotated 180°) ──
   svg += `<g transform="rotate(180,${W/2},${H/2})">`;
   svg += `<text x="${cx}" y="${cy + rnkSz}" font-family="Arial,Helvetica,sans-serif" font-size="${rnkSz}" font-weight="900" fill="${color}">${rank}</text>`;
-  svg += `<svg x="${cx}" y="${cy + rnkSz + 2}" width="${cSuitSz}" height="${cSuitSz}" viewBox="0 0 10 10" fill="${color}">${suitPath(card.suit)}</svg>`;
+  svg += `<svg x="${suitRX}" y="${suitY}" width="${cSuitSz}" height="${cSuitSz}" viewBox="0 0 10 10" fill="${color}">${suitPath(card.suit)}</svg>`;
   svg += `</g>`;
 
   // ── Centre: Ace only gets big central suit; all other cards are corners-only ──
@@ -703,6 +707,7 @@ function flipTopOfCol(colIdx) {
   if (col.length > 0 && !col[col.length - 1].faceUp) {
     col[col.length - 1].faceUp = true;
     score += 5;
+    soundFlip();
   }
 }
 
@@ -715,6 +720,7 @@ function applyMove(from, to, cards) {
     foundations[to.fi].push(cards[0]);
     score += 10; moves++;
     if (from.type === 'tab') flipTopOfCol(from.col);
+    soundFoundation();
     updateStats();
     return true;
   }
@@ -724,6 +730,7 @@ function applyMove(from, to, cards) {
     tableau[to.col].push(...cards);
     score += 5; moves++;
     if (from.type === 'tab') flipTopOfCol(from.col);
+    soundMove();
     updateStats();
     return true;
   }
@@ -777,16 +784,17 @@ function tryAutoMove(pile, col, fi, idx) {
 function dealFromStock() {
   saveHistory();
   if (stock.length === 0) {
-    // Reset: flip waste back to stock
     stock = waste.reverse().map(c => ({ ...c, faceUp: false }));
     waste = [];
     score = Math.max(0, score - 100);
+    soundFlip();
   } else {
     const card = stock.pop();
     card.faceUp = true;
     waste.push(card);
     score += 5;
     moves++;
+    soundDeal();
   }
   updateStats();
   render();
@@ -841,6 +849,7 @@ function checkWin() {
     const finalScore = score + timeBonus;
     setTimeout(() => {
       spawnConfetti();
+      soundWin();
       document.getElementById('win-score').textContent = `Final Score: ${finalScore} · Moves: ${moves}`;
       document.getElementById('win-screen').classList.add('show');
     }, 300);
@@ -864,7 +873,67 @@ function spawnConfetti() {
   }
 }
 
-// ── New game ──
+// ── Sound system ──
+let soundOn = true;
+let audioCtx = null;
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playTone(freq, type, duration, volume, delay = 0) {
+  if (!soundOn) return;
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
+    gain.gain.setValueAtTime(0, ctx.currentTime + delay);
+    gain.gain.linearRampToValueAtTime(volume, ctx.currentTime + delay + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + delay + duration);
+    osc.start(ctx.currentTime + delay);
+    osc.stop(ctx.currentTime + delay + duration);
+  } catch(e) {}
+}
+
+function soundDeal() {
+  // Soft thwap — short noise burst
+  playTone(180, 'triangle', 0.08, 0.18);
+}
+
+function soundFlip() {
+  // Quick rising tick
+  playTone(300, 'sine', 0.06, 0.12);
+  playTone(420, 'sine', 0.06, 0.08, 0.04);
+}
+
+function soundMove() {
+  // Gentle soft thud
+  playTone(220, 'sine', 0.10, 0.14);
+}
+
+function soundFoundation() {
+  // Satisfying two-note chime
+  playTone(523, 'sine', 0.15, 0.18);       // C5
+  playTone(659, 'sine', 0.15, 0.14, 0.10); // E5
+}
+
+function soundWin() {
+  // Little ascending fanfare
+  const notes = [523, 659, 784, 1047];
+  notes.forEach((f, i) => playTone(f, 'sine', 0.25, 0.18, i * 0.12));
+}
+
+function toggleSound() {
+  soundOn = !soundOn;
+  document.getElementById('sound-btn').textContent = soundOn ? '🔊' : '🔇';
+}
+
+
 function newGame() {
   document.getElementById('win-screen').classList.remove('show');
   clearInterval(timerInterval);
