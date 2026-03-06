@@ -52,8 +52,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 16px 4px;
+    padding: 6px 8px 4px;
     flex-shrink: 0;
+    gap: 4px;
   }
 
   #title {
@@ -67,7 +68,7 @@
 
   #score-area {
     display: flex;
-    gap: 16px;
+    gap: clamp(6px, 2vw, 16px);
     align-items: center;
   }
 
@@ -86,7 +87,7 @@
 
   #btn-row {
     display: flex;
-    gap: 8px;
+    gap: 5px;
   }
 
   .btn {
@@ -94,11 +95,12 @@
     border: 1px solid rgba(201,168,76,0.4);
     color: var(--gold);
     font-family: Arial, Helvetica, sans-serif;
-    font-size: 13px;
-    padding: 5px 12px;
+    font-size: clamp(11px, 2.5vw, 13px);
+    padding: 5px 10px;
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.15s;
+    white-space: nowrap;
   }
   .btn:active { background: rgba(201,168,76,0.2); transform: scale(0.97); }
 
@@ -241,7 +243,7 @@
     </div>
     <div id="btn-row">
       <button class="btn" onclick="undoMove()">↩ Undo</button>
-      <button class="btn" id="sound-btn" onclick="toggleSound()">🔊</button>
+      <button class="btn" id="sound-btn" onclick="toggleSound()" style="padding:5px 8px;font-size:16px;">🔊</button>
       <button class="btn" onclick="newGame()">New Game</button>
     </div>
   </div>
