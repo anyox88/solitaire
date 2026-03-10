@@ -531,6 +531,8 @@ function attachPointerEvents() {
   });
 }
 
+let lastTapTarget = null, lastTapTime = 0;
+
 function onPointerDown(e) {
   e.preventDefault();
   const el = e.currentTarget;
@@ -539,14 +541,24 @@ function onPointerDown(e) {
 
   if (pile === 'stock') { dealFromStock(); return; }
 
-  // Double-tap to foundation
-  if (e.detail === 2 || el._lastTap && Date.now() - el._lastTap < 300) {
-    el._lastTap = 0;
-    tryAutoMove(pile, el.dataset.col !== undefined ? parseInt(el.dataset.col) : null,
-                el.dataset.found !== undefined ? parseInt(el.dataset.found) : null, idx);
+  // Double-tap/click to foundation — use global tracking since elements are recreated each render
+  const now = Date.now();
+  const sameCard = lastTapTarget &&
+    lastTapTarget.pile === pile &&
+    lastTapTarget.idx  === idx &&
+    lastTapTarget.col  === el.dataset.col &&
+    lastTapTarget.found === el.dataset.found;
+
+  if (e.detail === 2 || (sameCard && now - lastTapTime < 350)) {
+    lastTapTime = 0; lastTapTarget = null;
+    tryAutoMove(pile,
+      el.dataset.col   !== undefined ? parseInt(el.dataset.col)   : null,
+      el.dataset.found !== undefined ? parseInt(el.dataset.found) : null,
+      idx);
     return;
   }
-  el._lastTap = Date.now();
+  lastTapTarget = { pile, idx, col: el.dataset.col, found: el.dataset.found };
+  lastTapTime = now;
 
   // Gather cards to drag
   let cards = [];
