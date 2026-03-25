@@ -6,11 +6,10 @@
 <title>Bubble Shooter</title>
 <style>
   :root {
-    --bg: #0a0a1a;
-    --panel: #12122a;
+    --bg: #d8e0e8;
+    --panel: #2a3a4a;
     --gold: #f0c040;
     --silver: #c8d8e8;
-    --bubble-r: 22px;
   }
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
   html, body {
@@ -62,16 +61,6 @@
     cursor:crosshair;
     touch-action:none;
   }
-  #preview-panel {
-    position:absolute; right:8px; top:50%;
-    transform:translateY(-50%);
-    display:flex; flex-direction:column; align-items:center;
-    gap:6px;
-  }
-  #preview-label {
-    font-size:9px; color:#888; text-transform:uppercase; letter-spacing:1px;
-  }
-  #preview-canvas { display:block; }
   #win-screen {
     position:fixed; inset:0;
     background: rgba(0,0,0,0.85);
@@ -82,6 +71,15 @@
   #win-screen.show { display:flex; }
   #win-title { font-size:clamp(28px,8vw,48px); font-weight:900; color:var(--gold); letter-spacing:4px; }
   #win-sub { color:var(--silver); font-size:clamp(14px,3.5vw,18px); }
+  .confetti-piece {
+    position:fixed; top:-12px; width:10px; height:10px;
+    border-radius:2px; pointer-events:none; z-index:200;
+    animation: confetti-fall linear forwards;
+  }
+  @keyframes confetti-fall {
+    0%   { transform: translateY(0) rotate(0deg); opacity:1; }
+    100% { transform: translateY(110vh) rotate(720deg); opacity:0; }
+  }
 </style>
 </head>
 <body>
@@ -98,10 +96,6 @@
   </div>
   <div id="game-wrap">
     <canvas id="game-canvas"></canvas>
-    <div id="preview-panel">
-      <div id="preview-label">Next</div>
-      <canvas id="preview-canvas" width="44" height="44"></canvas>
-    </div>
   </div>
 </div>
 <div id="win-screen">
@@ -132,7 +126,7 @@ function toggleSound() {
 }
 
 // ── Constants ──
-const COLORS = ['#e63946','#f4a261','#2ec4b6','#6a4c93','#4cc9f0','#80b918'];
+const COLORS = ['#ff0000','#00ffff','#ffff00','#66ff00','#0808ff','#cc00ff'];
 const COLOR_NAMES = ['red','orange','teal','purple','sky','lime'];
 const ROWS = 12; // rows of bubbles
 const COLS_ODD = 8;  // cols in even rows
@@ -141,7 +135,7 @@ const DANGER_ROW = 11; // if bubbles reach this row, danger
 const SNAP_DIST_FACTOR = 0.9;
 
 // ── State ──
-let canvas, ctx, pcv, pctx;
+let canvas, ctx;
 let CW, CH, BR, GAP, GRID_X0, GRID_Y0, ROW_H;
 let grid = [];       // grid[r][c] = color string or null
 let bubble = null;   // current bubble being shot
@@ -154,20 +148,23 @@ let aimX = null, aimY = null; // aim target
 let pendingDrop = false; // new row about to drop
 
 // ── Layout ──
+let PLAY_W, PLAY_X0; // narrower play area within the canvas
+
 function computeLayout() {
   const wrap = document.getElementById('game-wrap');
   CW = wrap.clientWidth;
   CH = wrap.clientHeight;
   canvas.width = CW; canvas.height = CH;
 
-  // bubble radius based on width, fitting COLS_ODD bubbles with gaps
-  const maxByWidth = Math.floor((CW * 0.82) / (COLS_ODD * 2 + 1));
-  const maxByHeight = Math.floor((CH * 0.82) / ((ROWS + 3) * 1.8));
-  BR = Math.max(12, Math.min(maxByWidth, maxByHeight, 22));
+  // bubble radius
+  const maxByHeight = Math.floor((CH * 0.80) / ((ROWS + 3) * 1.8));
+  BR = Math.max(12, Math.min(maxByHeight, 22));
   GAP = 1;
-  ROW_H = Math.floor(BR * 1.73); // hex row height
+  ROW_H = Math.floor(BR * 1.73);
 
-  GRID_X0 = Math.floor((CW - (COLS_ODD * 2 * BR + (COLS_ODD-1) * GAP)) / 2) + BR;
+  // play area: wide enough for COLS_ODD bubbles, centred
+  PLAY_W = COLS_ODD * 2 * BR + (COLS_ODD - 1) * GAP + BR * 2;
+  PLAY_X0 = Math.floor((CW - PLAY_W) / 2);
   GRID_Y0 = BR + 8;
 }
 
@@ -177,7 +174,7 @@ function colsInRow(r) { return r % 2 === 0 ? COLS_ODD : COLS_EVEN; }
 function bubblePos(r, c) {
   const cols = colsInRow(r);
   const rowWidth = cols * 2 * BR + (cols - 1) * GAP;
-  const x0 = Math.floor((CW - rowWidth) / 2) + BR;
+  const x0 = PLAY_X0 + Math.floor((PLAY_W - rowWidth) / 2) + BR;
   const x = x0 + c * (2 * BR + GAP);
   const y = GRID_Y0 + r * ROW_H;
   return { x, y };
@@ -283,19 +280,31 @@ function makeGrid() {
 function drawBubble(ctx, x, y, r, color, alpha=1) {
   ctx.save();
   ctx.globalAlpha = alpha;
-  // main circle
-  const grad = ctx.createRadialGradient(x - r*0.3, y - r*0.3, r*0.1, x, y, r);
-  grad.addColorStop(0, lighten(color, 0.5));
-  grad.addColorStop(0.6, color);
-  grad.addColorStop(1, darken(color, 0.4));
-  ctx.beginPath(); ctx.arc(x, y, r-1, 0, Math.PI*2);
+
+  // base gradient — rich colour with darkened bottom edge
+  const grad = ctx.createRadialGradient(x - r*0.25, y - r*0.25, r*0.05, x, y, r);
+  grad.addColorStop(0,   lighten(color, 0.55));
+  grad.addColorStop(0.45, color);
+  grad.addColorStop(1,   darken(color, 0.45));
+  ctx.beginPath(); ctx.arc(x, y, r - 0.5, 0, Math.PI*2);
   ctx.fillStyle = grad; ctx.fill();
-  // shine
-  ctx.beginPath(); ctx.arc(x - r*0.28, y - r*0.28, r*0.28, 0, Math.PI*2);
-  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fill();
-  // border
-  ctx.beginPath(); ctx.arc(x, y, r-1, 0, Math.PI*2);
-  ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth=1.5; ctx.stroke();
+
+  // large soft highlight (top-left glow)
+  const glow = ctx.createRadialGradient(x - r*0.3, y - r*0.35, 0, x - r*0.2, y - r*0.2, r*0.75);
+  glow.addColorStop(0,   'rgba(255,255,255,0.55)');
+  glow.addColorStop(0.5, 'rgba(255,255,255,0.15)');
+  glow.addColorStop(1,   'rgba(255,255,255,0)');
+  ctx.beginPath(); ctx.arc(x, y, r - 0.5, 0, Math.PI*2);
+  ctx.fillStyle = glow; ctx.fill();
+
+  // small sharp specular spot
+  ctx.beginPath(); ctx.arc(x - r*0.32, y - r*0.32, r*0.18, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fill();
+
+  // subtle rim
+  ctx.beginPath(); ctx.arc(x, y, r - 0.5, 0, Math.PI*2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1.5; ctx.stroke();
+
   ctx.restore();
 }
 
@@ -315,33 +324,40 @@ function drawAimLine(cx, cy, targetX, targetY) {
   const len = Math.hypot(dx, dy);
   if (len === 0) return;
   let vx = dx/len, vy = dy/len;
-  if (vy > -0.1) return; // must shoot upward
+  if (vy > -0.1) return;
+
+  // Use a brightened version of the current bubble colour
+  const lineColor = currentColor ? lighten(currentColor, 0.25) : 'rgba(255,255,255,0.8)';
 
   ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([6,6]);
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 4;
+  ctx.setLineDash([10, 8]);
+  ctx.lineCap = 'round';
+  ctx.globalAlpha = 0.85;
   ctx.beginPath();
 
   let x = cx, y = cy;
-  const maxBounces = 3;
   let bounces = 0;
-  const totalLen = CH * 1.5;
+  const totalLen = CH * 4; // long enough to always reach the top
   let travelled = 0;
+  const wallL = PLAY_X0 + BR;
+  const wallR = PLAY_X0 + PLAY_W - BR;
   ctx.moveTo(x, y);
 
-  while (travelled < totalLen && bounces <= maxBounces) {
-    // find wall bounce or top hit
-    let tLeft = vx < 0 ? (BR - x) / vx : Infinity;
-    let tRight = vx > 0 ? (CW - BR - x) / vx : Infinity;
-    let tTop = vy < 0 ? (GRID_Y0 - BR - y) / vy : Infinity;
-    let tDist = totalLen - travelled;
+  while (travelled < totalLen) {
+    let tLeft  = vx < 0 ? (wallL - x) / vx : Infinity;
+    let tRight = vx > 0 ? (wallR - x) / vx : Infinity;
+    let tTop   = vy < 0 ? (GRID_Y0 - y) / vy : Infinity;
+    let tDist  = totalLen - travelled;
     const t = Math.min(tLeft, tRight, tTop, tDist);
     x += vx * t; y += vy * t;
     ctx.lineTo(x, y);
     travelled += t;
-    if (t === tLeft || t === tRight) { vx = -vx; bounces++; }
-    else break;
+    if (t === tLeft || t === tRight) {
+      vx = -vx; bounces++;
+      if (bounces > 5) break;
+    } else break; // hit top or exhausted length
   }
   ctx.stroke();
   ctx.restore();
@@ -364,17 +380,26 @@ function render(ts=0) {
 
   ctx.clearRect(0,0,CW,CH);
 
-  // background gradient
-  const bg = ctx.createLinearGradient(0,0,0,CH);
-  bg.addColorStop(0,'#0d0d2a'); bg.addColorStop(1,'#0a0a14');
-  ctx.fillStyle = bg; ctx.fillRect(0,0,CW,CH);
+  // light grey background
+  ctx.fillStyle = '#dde3ea';
+  ctx.fillRect(0,0,CW,CH);
 
-  // danger line
-  const dangerY = GRID_Y0 + DANGER_ROW * ROW_H + BR;
-  ctx.strokeStyle = 'rgba(255,60,60,0.3)';
-  ctx.lineWidth = 1; ctx.setLineDash([4,4]);
-  ctx.beginPath(); ctx.moveTo(0,dangerY); ctx.lineTo(CW,dangerY); ctx.stroke();
-  ctx.setLineDash([]);
+  // side areas (outside play zone) — slightly darker
+  ctx.fillStyle = '#c8d0d8';
+  ctx.fillRect(0, 0, PLAY_X0, CH);
+  ctx.fillRect(PLAY_X0 + PLAY_W, 0, CW - PLAY_X0 - PLAY_W, CH);
+
+  // play area background
+  ctx.fillStyle = '#eef2f6';
+  ctx.fillRect(PLAY_X0, 0, PLAY_W, CH);
+
+  // play area walls
+  ctx.strokeStyle = '#aab4be';
+  ctx.lineWidth = 2; ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(PLAY_X0, 0); ctx.lineTo(PLAY_X0, CH);
+  ctx.moveTo(PLAY_X0 + PLAY_W, 0); ctx.lineTo(PLAY_X0 + PLAY_W, CH);
+  ctx.stroke();
 
   // grid bubbles
   for (let r = 0; r < ROWS; r++) {
@@ -386,27 +411,25 @@ function render(ts=0) {
     }
   }
 
+  const cx = PLAY_X0 + PLAY_W/2;
+  const cy = CH - BR*2;
+
   // aim line
   if (!bubble && !gameOver) {
-    const cannonX = CW/2, cannonY = CH - BR*2;
-    drawAimLine(cannonX, cannonY, aimX, aimY);
+    drawAimLine(cx, cy, aimX, aimY);
   }
 
   // flying bubble
   if (bubble) {
     bubble.x += bubble.vx * dt * 60;
     bubble.y += bubble.vy * dt * 60;
-    // wall bounce
-    if (bubble.x - BR < 0) { bubble.x = BR; bubble.vx = Math.abs(bubble.vx); playSound('bounce'); }
-    if (bubble.x + BR > CW) { bubble.x = CW-BR; bubble.vx = -Math.abs(bubble.vx); playSound('bounce'); }
-    // snap to grid when near top or slow
+    if (bubble.x - BR < PLAY_X0) { bubble.x = PLAY_X0 + BR; bubble.vx = Math.abs(bubble.vx); playSound('bounce'); }
+    if (bubble.x + BR > PLAY_X0 + PLAY_W) { bubble.x = PLAY_X0 + PLAY_W - BR; bubble.vx = -Math.abs(bubble.vx); playSound('bounce'); }
     const hitRow = (bubble.y - GRID_Y0) / ROW_H;
     let snapped = false;
     if (bubble.y - BR <= GRID_Y0 + ROW_H * 1.5 || hitRow < 1) {
-      snapBubble();
-      snapped = true;
+      snapBubble(); snapped = true;
     } else {
-      // check collision with existing grid bubbles
       for (let r = 0; r < ROWS && !snapped; r++) {
         for (let c = 0; c < colsInRow(r) && !snapped; c++) {
           if (grid[r][c]) {
@@ -421,25 +444,20 @@ function render(ts=0) {
     if (!snapped) drawBubble(ctx, bubble.x, bubble.y, BR, bubble.color);
   }
 
-  // cannon
+  // current bubble at cannon position (drawn, no barrel)
+  if (!gameOver && !bubble) {
+    drawBubble(ctx, cx, cy, BR, currentColor || '#888');
+  }
+
+  // NEXT bubble — bottom right corner of play area
   if (!gameOver) {
-    const cx = CW/2, cy = CH - BR*2;
-    // cannon body
-    ctx.save();
-    let angle2 = Math.PI/2;
-    if (aimX !== null && aimY !== null) {
-      const dx = aimX-cx, dy = aimY-cy;
-      if (dy < 0) angle2 = Math.atan2(-dy,-dx);
-    }
-    ctx.translate(cx,cy);
-    ctx.rotate(-angle2 + Math.PI/2);
-    ctx.fillStyle = '#334';
-    ctx.beginPath(); ctx.roundRect(-BR*0.35, -BR*1.1, BR*0.7, BR*1.3, 3); ctx.fill();
-    ctx.fillStyle = '#556';
-    ctx.beginPath(); ctx.roundRect(-BR*0.28, -BR*1.0, BR*0.56, BR*1.1, 3); ctx.fill();
-    ctx.restore();
-    // current bubble in cannon
-    if (!bubble) drawBubble(ctx, cx, cy, BR*0.9, currentColor || '#888');
+    const nextX = PLAY_X0 + PLAY_W - BR - 4;
+    const nextY = cy;
+    ctx.fillStyle = '#556677';
+    ctx.font = `bold ${Math.max(9, BR*0.55)}px 'Trebuchet MS', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('NEXT', nextX, nextY - BR - 4);
+    if (nextColor) drawBubble(ctx, nextX, nextY, BR, nextColor);
   }
 
   // pop particles
@@ -454,36 +472,38 @@ function render(ts=0) {
     return false;
   });
 
-  // preview
-  drawPreview();
-
   requestAnimationFrame(render);
 }
 
 let currentColor = null;
-function drawPreview() {
-  pctx.clearRect(0,0,44,44);
-  if (nextColor) drawBubble(pctx, 22, 22, 18, nextColor);
-}
 
 function snapBubble() {
   if (!bubble) return;
   const {color, x, y} = bubble;
   bubble = null;
 
-  // find nearest empty cell
+  // Only consider cells that are adjacent to an existing bubble OR in the top row
+  function isValidCell(r, c) {
+    if (r === 0) return true; // top row always valid
+    for (const [nr, nc] of getNeighbors(r, c)) {
+      if (grid[nr] && grid[nr][nc]) return true;
+    }
+    return false;
+  }
+
+  // find nearest valid empty cell
   let best = null, bestDist = Infinity;
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < colsInRow(r); c++) {
-      if (!grid[r][c]) {
-        const pos = bubblePos(r,c);
-        const d = Math.hypot(x-pos.x, y-pos.y);
-        if (d < bestDist) { bestDist = d; best={r,c}; }
+      if (!grid[r][c] && isValidCell(r, c)) {
+        const pos = bubblePos(r, c);
+        const d = Math.hypot(x - pos.x, y - pos.y);
+        if (d < bestDist) { bestDist = d; best = {r, c}; }
       }
     }
   }
   if (!best) { spawnBubble(); return; }
-  const {r,c} = best;
+  const {r, c} = best;
   grid[r][c] = color;
 
   // check match
@@ -518,7 +538,6 @@ function snapBubble() {
 function spawnBubble() {
   currentColor = nextColor || randomColor();
   nextColor = randomColor();
-  drawPreview();
 }
 
 function randomColor() {
@@ -533,13 +552,32 @@ function randomColor() {
 
 function shoot(tx, ty) {
   if (bubble || gameOver) return;
-  const cx = CW/2, cy = CH - BR*2;
+  const cx = PLAY_X0 + PLAY_W/2, cy = CH - BR*2;
   const dx = tx-cx, dy = ty-cy;
-  if (dy >= -20) return; // must aim upward
+  if (dy >= -20) return;
   const len = Math.hypot(dx,dy);
-  const speed = BR * 28;
+  const speed = BR * 42;
   bubble = { x:cx, y:cy, vx:(dx/len)*speed/60, vy:(dy/len)*speed/60, color:currentColor };
   playSound('shoot');
+}
+
+function spawnConfetti() {
+  const colors = ['#ff0000','#00ffff','#ffff00','#66ff00','#0808ff','#cc00ff','#ffffff','#ffaacc'];
+  for (let i = 0; i < 90; i++) {
+    setTimeout(() => {
+      const el = document.createElement('div');
+      el.className = 'confetti-piece';
+      el.style.left = Math.random() * 100 + 'vw';
+      el.style.background = colors[Math.floor(Math.random() * colors.length)];
+      el.style.animationDuration = (1.4 + Math.random() * 2) + 's';
+      el.style.animationDelay = '0s';
+      el.style.transform = `rotate(${Math.random() * 360}deg)`;
+      el.style.width = (7 + Math.random() * 6) + 'px';
+      el.style.height = el.style.width;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 4000);
+    }, i * 35);
+  }
 }
 
 // ── Win ──
@@ -547,7 +585,10 @@ function winGame() {
   gameOver = true;
   playSound('win');
   document.getElementById('win-sub').textContent = `Score: ${score}`;
-  document.getElementById('win-screen').classList.add('show');
+  setTimeout(() => {
+    spawnConfetti();
+    document.getElementById('win-screen').classList.add('show');
+  }, 200);
 }
 
 // ── New game ──
@@ -558,7 +599,6 @@ function newGame() {
   makeGrid();
   currentColor = randomColor();
   nextColor = randomColor();
-  drawPreview();
 }
 
 // ── Input ──
@@ -573,8 +613,6 @@ function getPos(e) {
 // ── Init ──
 canvas = document.getElementById('game-canvas');
 ctx = canvas.getContext('2d');
-pcv = document.getElementById('preview-canvas');
-pctx = pcv.getContext('2d');
 computeLayout();
 newGame();
 
