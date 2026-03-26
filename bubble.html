@@ -458,6 +458,10 @@ function render(ts=0) {
     ctx.textAlign = 'center';
     ctx.fillText('NEXT', nextX, nextY - BR - 4);
     if (nextColor) drawBubble(ctx, nextX, nextY, BR, nextColor);
+    // tap hint
+    ctx.fillStyle = '#889aaa';
+    ctx.font = `${Math.max(7, BR*0.42)}px 'Trebuchet MS', sans-serif`;
+    ctx.fillText('tap to swap', nextX, nextY + BR + 12);
   }
 
   // pop particles
@@ -601,6 +605,26 @@ function newGame() {
   nextColor = randomColor();
 }
 
+let justSwapped = false;
+
+function swapBubbles() {
+  if (bubble || gameOver) return;
+  const tmp = currentColor;
+  currentColor = nextColor;
+  nextColor = tmp;
+  justSwapped = true;
+  playSound('pop');
+}
+
+function hitNextBubble(x, y) {
+  // returns true if (x,y) is within the Next bubble circle
+  const cx = PLAY_X0 + PLAY_W/2;
+  const cy = CH - BR*2;
+  const nextX = PLAY_X0 + PLAY_W - BR - 4;
+  const nextY = cy;
+  return Math.hypot(x - nextX, y - nextY) <= BR * 1.4; // slightly generous hit area
+}
+
 // ── Input ──
 function getPos(e) {
   const r = canvas.getBoundingClientRect();
@@ -619,8 +643,10 @@ newGame();
 // ── Event listeners (after canvas is assigned) ──
 canvas.addEventListener('pointerdown', e => {
   e.preventDefault();
-  isDragging = true;
   const {x,y} = getPos(e);
+  // tap on Next bubble — swap instead of shoot
+  if (hitNextBubble(x, y)) { swapBubbles(); return; }
+  isDragging = true;
   aimX = x; aimY = y;
 }, {passive:false});
 
@@ -634,6 +660,7 @@ canvas.addEventListener('pointermove', e => {
 canvas.addEventListener('pointerup', e => {
   e.preventDefault();
   isDragging = false;
+  if (justSwapped) { justSwapped = false; return; }
   if (aimX !== null && aimY !== null) shoot(aimX, aimY);
 }, {passive:false});
 
